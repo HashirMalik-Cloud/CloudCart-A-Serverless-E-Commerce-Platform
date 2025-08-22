@@ -1,3 +1,7 @@
+
+![Architecture Diagram](Architecture%20diagram.png)
+[![Wactch the video walkthrough](https://img.youtube.com/vi/xri8zOSyx2c/0.jpg)](https://youtu.be/xri8zOSyx2c)
+
 CloudCart – A Serverless E-Commerce Platform  
 
 Welcome to **CloudCart**, a modern serverless e-commerce application built on **AWS Amplify** and related cloud services.  
