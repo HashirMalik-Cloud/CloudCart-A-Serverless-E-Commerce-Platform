@@ -1,58 +1,67 @@
-// amplify/backend/function/downloadFile/src/index.js
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient, GetCommand } = require("@aws-sdk/lib-dynamodb");
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+
 const BUCKET = process.env.UPLOAD_BUCKET || "";
+const PURCHASES_TABLE = process.env.PURCHASES_TABLE || "Purchases";
 
 exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "POST,OPTIONS",
     "Content-Type": "application/json",
   };
 
-  // Handle CORS preflight
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 200, headers, body: "" };
   }
 
   try {
-    let s3Key;
+    // 1. Extract Authenticated User Identity from Cognito Claims
+    const userId = event.requestContext?.authorizer?.claims?.sub;
+    const body = JSON.parse(event.body || "{}");
+    const { purchaseId, s3Key } = body;
 
-    if (event.httpMethod === "GET") {
-      // GET request → read from query string
-      s3Key = event.queryStringParameters?.s3Key;
-    } else if (event.httpMethod === "POST") {
-      // POST request → read from JSON body
-      const body = JSON.parse(event.body || "{}");
-      s3Key = body.s3Key;
-    }
-
-    if (!BUCKET) {
+    if (!userId) {
       return {
-        statusCode: 500,
+        statusCode: 401,
         headers,
-        body: JSON.stringify({ message: "Server not configured: UPLOAD_BUCKET missing" }),
+        body: JSON.stringify({ message: "Unauthorized: Missing Cognito Token" }),
       };
     }
 
-    if (!s3Key) {
+    if (!purchaseId || !s3Key) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ message: "Missing s3Key" }),
+        body: JSON.stringify({ message: "Missing purchaseId or s3Key" }),
       };
     }
 
-    // Generate presigned URL
-    const command = new GetObjectCommand({
-      Bucket: BUCKET,
-      Key: s3Key,
-    });
+    // 2. Security Check: Verify purchase ownership in DynamoDB
+    const record = await ddb.send(
+      new GetCommand({
+        TableName: PURCHASES_TABLE,
+        Key: { userId, purchaseId },
+      })
+    );
 
-    const url = await getSignedUrl(s3, command, { expiresIn: 60 });
+    if (!record.Item) {
+      return {
+        statusCode: 403,
+        headers,
+        body: JSON.stringify({ message: "Forbidden: Purchase record not found" }),
+      };
+    }
+
+    // 3. Generate short-lived presigned URL (valid for 5 minutes)
+    const command = new GetObjectCommand({ Bucket: BUCKET, Key: s3Key });
+    const url = await getSignedUrl(s3, command, { expiresIn: 300 });
 
     return {
       statusCode: 200,
@@ -64,10 +73,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        message: "Server error",
-        error: err.message,
-      }),
+      body: JSON.stringify({ message: "Internal Server Error", error: err.message }),
     };
   }
 };
