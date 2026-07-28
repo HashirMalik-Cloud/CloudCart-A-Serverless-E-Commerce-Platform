@@ -6,10 +6,8 @@ export default function MyPurchasesPage() {
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const API_PURCHASES =
-    "https://rzstnrgpeb.execute-api.us-east-1.amazonaws.com/dev/mypurchases";
-  const API_DOWNLOAD =
-    "https://rzstnrgpeb.execute-api.us-east-1.amazonaws.com/dev/download";
+const API_PURCHASES = process.env.NEXT_PUBLIC_API_PURCHASES;
+const API_DOWNLOAD = process.env.NEXT_PUBLIC_API_DOWNLOAD;
 
   const TEST_USER_ID = "test-user-1"; // Replace with actual auth user ID
 
